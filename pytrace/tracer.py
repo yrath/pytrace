@@ -3,6 +3,7 @@
 import sys
 import inspect
 import fnmatch
+import linecache
 
 from pytrace.util import colored
 
@@ -16,14 +17,11 @@ class Tracer(object):
         else:
             self.traced_paths = traced_paths
 
-        if trace_lines:
-            self.orig_tracefunc = sys.gettrace()
-            sys.settrace(self.tracefunc)
-        else:
-            self.orig_tracefunc = sys.getprofile()
-            sys.setprofile(self.tracefunc)
+        self.orig_tracefunc = sys.gettrace()
+        sys.settrace(self.tracefunc)
 
         self.max_depth = -1
+        self.last_trace = None
 
     def tracefunc(self, frame, event, arg):
         if frame is not None:
@@ -43,10 +41,16 @@ class Tracer(object):
             if event == "call":
                 self.stack.append(function)
                 msg += colored("--" * len(self.stack) + ">", color="green")
-                msg += " call {} from {}".format(
+                msg += " call {} from {} in {}".format(
                     colored(function),
-                    colored(self.stack[-2])
+                    colored(self.stack[-2]),
+                    colored(filename, color="blue"),
                 )
+                if self.last_trace is not None:
+                    msg += "\n" + " " * (2 * len(self.stack) + 1)
+                    msg += " as {}".format(
+                        colored(linecache.getline(*self.last_trace).strip(), color="blue")
+                    )
             elif event == "return":
                 self.stack.pop(-1)
                 msg += colored("<" + "--" * len(self.stack), color="yellow")
@@ -57,11 +61,9 @@ class Tracer(object):
             if msg:
                 if self.max_depth < 0 or len(self.stack) < self.max_depth:
                     print(msg)
+            self.last_trace = (filename, lineno)
 
         return self.tracefunc
 
     def disable(self):
-        if self.trace_lines:
-            sys.settrace(self.orig_tracefunc)
-        else:
-            sys.setprofile(self.orig_tracefunc)
+        sys.settrace(self.orig_tracefunc)
