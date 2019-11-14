@@ -6,4 +6,6 @@ setup(
     name="pytrace",
     version="0.0.1",
     packages=find_packages(),
+    author="Yannik Rath",
+    description="Trace python program execution at runtime.",
 )
