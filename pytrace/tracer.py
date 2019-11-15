@@ -31,62 +31,68 @@ class Tracer(object):
         self.orig_tracefunc = sys.gettrace()
         sys.settrace(self.tracefunc)
 
+        self.skip_paths = set()
+
         self.max_depth = -1
         self.last_trace = None
 
     def tracefunc(self, frame, event, arg):
-        if frame is not None:
-            filename, lineno, function, code_context, index = inspect.getframeinfo(frame)
+        # skip previously skipped frame without invoking inspect for performance
+        if event == "call" and frame.f_code in self.skip_paths:
+            return None
 
-            # check if file in paths to be checked
-            # only required if new function is called
-            if event == "call" and not any(fnmatch.fnmatch(filename, path)
-                    for path in self.traced_paths):
-                return None
+        filename, lineno, function, code_context, index = inspect.getframeinfo(frame)
 
-            # if we are in a method, figure out class
-            try:
-                cls = frame.f_locals['self'].__class__.__name__
-                function = "{}.{}".format(cls, function)
-            except (KeyError, AttributeError):
-                pass
+        # check if file in paths to be checked
+        # only required if new function is called
+        if event == "call" and not any(fnmatch.fnmatch(filename, path)
+                for path in self.traced_paths):
+            self.skip_paths.add(frame.f_code)
+            return None
 
-            msg = ""
-            if event == "call":
-                self.stack.append(function)
-                msg += colored("--" * len(self.stack) + ">", color="green")
-                msg += " call {} from {} in {}".format(
-                    colored(function),
-                    colored(self.stack[-2]),
-                    colored(filename, color="yellow"),
+        # if we are in a method, figure out class
+        try:
+            cls = frame.f_locals['self'].__class__.__name__
+            function = "{}.{}".format(cls, function)
+        except (KeyError, AttributeError):
+            pass
+
+        msg = ""
+        if event == "call":
+            self.stack.append(function)
+            msg += colored("--" * len(self.stack) + ">", color="green")
+            msg += " call {} from {} in {}".format(
+                colored(function),
+                colored(self.stack[-2]),
+                colored(filename, color="yellow"),
+            )
+            if self.last_trace is not None:
+                msg += "\n" + " " * (2 * len(self.stack) + 1)
+                msg += " {} {}, {}".format(
+                    colored("as", color="yellow"),
+                    highlight_code(linecache.getline(*self.last_trace)).strip(),
+                    colored("l:{}".format(lineno), color="yellow")
                 )
-                if self.last_trace is not None:
-                    msg += "\n" + " " * (2 * len(self.stack) + 1)
-                    msg += " {} {}, {}".format(
-                        colored("as", color="yellow"),
-                        highlight_code(linecache.getline(*self.last_trace)).strip(),
-                        colored("l:{}".format(lineno), color="yellow")
-                    )
-            elif event == "return":
-                self.stack.pop(-1)
-                msg += colored("<" + "--" * len(self.stack), color="yellow")
-                msg += " return from {} to {}".format(
-                    colored(function),
-                    colored(self.stack[-1])
+        elif event == "return":
+            self.stack.pop(-1)
+            msg += colored("<" + "--" * len(self.stack), color="yellow")
+            msg += " return from {} to {}".format(
+                colored(function),
+                colored(self.stack[-1])
+            )
+        elif event == "line" and code_context:
+            if self.trace_lines:
+                msg += " " * (2 * len(self.stack) + 1)
+                msg += " {} {}".format(
+                    colored("execute", color="yellow"),
+                    highlight_code(code_context[0]).rstrip()
                 )
-            elif event == "line" and code_context:
-                if self.trace_lines:
-                    msg += " " * (2 * len(self.stack) + 1)
-                    msg += " {} {}".format(
-                        colored("execute", color="yellow"),
-                        highlight_code(code_context[0]).strip()
-                    )
-            # only print message if stack does not exceed maximum depth
-            if msg:
-                if self.max_depth < 0 or len(self.stack) < self.max_depth:
-                    print(msg)
-            # remember last step for call events, to determine where the call happens
-            self.last_trace = (filename, lineno)
+        # only print message if stack does not exceed maximum depth
+        if msg:
+            if self.max_depth < 0 or len(self.stack) < self.max_depth:
+                print(msg)
+        # remember last step for call events, to determine where the call happens
+        self.last_trace = (filename, lineno)
 
         return self.tracefunc
 
