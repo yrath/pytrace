@@ -5,7 +5,7 @@ import inspect
 import fnmatch
 import linecache
 
-from pytrace.util import colored
+from pytrace.util import colored, highlight_code
 
 
 class Tracer(object):
@@ -39,8 +39,10 @@ class Tracer(object):
             filename, lineno, function, code_context, index = inspect.getframeinfo(frame)
 
             # check if file in paths to be checked
-            if not any(fnmatch.fnmatch(filename, path) for path in self.traced_paths):
-                return self.tracefunc
+            # only required if new function is called
+            if event == "call" and not any(fnmatch.fnmatch(filename, path)
+                    for path in self.traced_paths):
+                return None
 
             # if we are in a method, figure out class
             try:
@@ -56,13 +58,14 @@ class Tracer(object):
                 msg += " call {} from {} in {}".format(
                     colored(function),
                     colored(self.stack[-2]),
-                    colored(filename, color="blue"),
+                    colored(filename, color="yellow"),
                 )
                 if self.last_trace is not None:
                     msg += "\n" + " " * (2 * len(self.stack) + 1)
-                    msg += " as {}, {}".format(
-                        colored(linecache.getline(*self.last_trace).strip(), color="blue"),
-                        colored("l:{}".format(lineno), color="blue")
+                    msg += " {} {}, {}".format(
+                        colored("as", color="yellow"),
+                        highlight_code(linecache.getline(*self.last_trace)).strip(),
+                        colored("l:{}".format(lineno), color="yellow")
                     )
             elif event == "return":
                 self.stack.pop(-1)
@@ -71,11 +74,12 @@ class Tracer(object):
                     colored(function),
                     colored(self.stack[-1])
                 )
-            elif event == "line":
+            elif event == "line" and code_context:
                 if self.trace_lines:
                     msg += " " * (2 * len(self.stack) + 1)
-                    msg += " execute {}".format(
-                        colored(code_context[0].strip(), color="yellow")
+                    msg += " {} {}".format(
+                        colored("execute", color="yellow"),
+                        highlight_code(code_context[0]).strip()
                     )
             # only print message if stack does not exceed maximum depth
             if msg:

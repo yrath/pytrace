@@ -8,4 +8,5 @@ setup(
     packages=find_packages(),
     author="Yannik Rath",
     description="Trace python program execution at runtime.",
+    install_requires=["pygments"],
 )
