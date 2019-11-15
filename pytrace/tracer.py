@@ -4,8 +4,17 @@ import sys
 import inspect
 import fnmatch
 import linecache
+import os
 
+from contextlib import contextmanager
 from pytrace.util import colored, highlight_code
+
+
+@contextmanager
+def trace_execution(*args, **kwargs):
+    tracer = Tracer(*args, **kwargs)
+    yield tracer
+    tracer.disable()
 
 
 class Tracer(object):
@@ -37,11 +46,14 @@ class Tracer(object):
         self.last_trace = None
 
     def tracefunc(self, frame, event, arg):
+        if frame is None:
+            return tracefunc
         # skip previously skipped frame without invoking inspect for performance
-        if event == "call" and frame.f_code in self.skip_paths:
+        if frame.f_code in self.skip_paths:
             return None
 
         filename, lineno, function, code_context, index = inspect.getframeinfo(frame)
+        filename = os.path.abspath(filename)
 
         # check if file in paths to be checked
         # only required if new function is called
