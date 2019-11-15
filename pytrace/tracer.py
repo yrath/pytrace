@@ -30,7 +30,7 @@ class Tracer(object):
           max_depth: Maximum depth of stack that is still printed. Negative values
               mean no maximum. Defaults to -1.
         """
-        self.stack = ["__main__", "Tracer.__init__"]
+        self.stack = ["initial dir"]
         if traced_paths is None:
             self.traced_paths = ["*"]
         else:
@@ -42,12 +42,12 @@ class Tracer(object):
 
         self.skip_paths = set()
 
-        self.max_depth = -1
+        self.max_depth = max_depth
         self.last_trace = None
 
     def tracefunc(self, frame, event, arg):
         if frame is None:
-            return tracefunc
+            return self.tracefunc
         # skip previously skipped frame without invoking inspect for performance
         if frame.f_code in self.skip_paths:
             return None
@@ -73,21 +73,21 @@ class Tracer(object):
         if event == "call":
             self.stack.append(function)
             msg += colored("--" * len(self.stack) + ">", color="green")
-            msg += " call {} from {} in {}".format(
+            msg += " call {} in {} from {}".format(
                 colored(function),
-                colored(self.stack[-2]),
                 colored(filename, color="yellow"),
+                colored(self.stack[-2]),
             )
             if self.last_trace is not None:
                 msg += "\n" + " " * (2 * len(self.stack) + 1)
                 msg += " {} {}, {}".format(
                     colored("as", color="yellow"),
                     highlight_code(linecache.getline(*self.last_trace)).strip(),
-                    colored("l:{}".format(lineno), color="yellow")
+                    colored("l:{}".format(self.last_trace[1]), color="yellow")
                 )
         elif event == "return":
             self.stack.pop(-1)
-            msg += colored("<" + "--" * len(self.stack), color="yellow")
+            msg += colored("  " * len(self.stack) + " <-", color="yellow")
             msg += " return from {} to {}".format(
                 colored(function),
                 colored(self.stack[-1])
