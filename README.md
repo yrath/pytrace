@@ -32,7 +32,7 @@ which will output
 
 ![pytrace output](img/example.png)
 
-Note that starting with python 3.2, the context manager can also be used as a decorator with `trace_execution()`.
+Note that starting with python 3.2, the context manager can also be used as a decorator with `@trace_execution()`.
 
 The tracer can also be used from the command line with
 
