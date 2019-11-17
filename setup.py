@@ -8,5 +8,6 @@ setup(
     packages=find_packages(exclude=["img"]),
     author="Yannik Rath",
     description="Trace python program execution at runtime.",
+    scripts=["bin/pytrace"],
     install_requires=["pygments"],
 )

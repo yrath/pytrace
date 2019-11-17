@@ -31,3 +31,11 @@ with trace_execution(traced_paths=[os.path.abspath(__file__)]) as tracer:
 which will output
 
 ![pytrace output](img/example.png)
+
+Note that starting with python 3.2, the context manager can also be used as a decorator with `trace_execution()`.
+
+The tracer can also be used from the command line with
+
+```
+pytrace example.py
+```
