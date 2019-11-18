@@ -5,6 +5,8 @@ import inspect
 import fnmatch
 import linecache
 import os
+import ast
+import astunparse
 
 from contextlib import contextmanager
 from pytrace.util import colored, highlight_code
@@ -17,9 +19,22 @@ def trace_execution(*args, **kwargs):
     tracer.disable()
 
 
+class ASTValueGetter(ast.NodeTransformer):
+    def __init__(self, namespace):
+        self.namespace = namespace
+
+    def visit_Name(self, node):
+        node_value = self.namespace.get(node.id, node)
+        if isinstance(node_value, (bool, int, float, list, tuple)):
+            return ast.Constant(node_value)
+        else:
+            return node
+
+
 class Tracer(object):
 
-    def __init__(self, trace_lines=False, traced_paths=None, max_depth=-1):
+    def __init__(self, trace_lines=False, traced_paths=None, parse_values=False,
+            max_depth=-1):
         """
         Initialize Tracer.
 
@@ -27,6 +42,8 @@ class Tracer(object):
           trace_line: Whether each line execution should be traced. Defaults to False.
           traced_paths: Only trace program execution in files contained in traced_paths.
               Allows globbing and defaults to all paths.
+          parse_values: Repeat function call trace with simple variables replaced by
+              their values. Defaults to False.
           max_depth: Maximum depth of stack that is still printed. Negative values
               mean no maximum. Defaults to -1.
         """
@@ -35,7 +52,9 @@ class Tracer(object):
             self.traced_paths = ["*"]
         else:
             self.traced_paths = traced_paths
+
         self.trace_lines = trace_lines
+        self.parse_values = parse_values
 
         self.orig_tracefunc = sys.gettrace()
         sys.settrace(self.tracefunc)
@@ -79,12 +98,28 @@ class Tracer(object):
                 colored(self.stack[-2]),
             )
             if self.last_trace is not None:
+                calling_line = linecache.getline(*self.last_trace)
+
                 msg += "\n" + " " * (2 * len(self.stack) + 1)
                 msg += " {} {}, {}".format(
                     colored("as", color="yellow"),
-                    highlight_code(linecache.getline(*self.last_trace)).strip(),
+                    highlight_code(calling_line).strip(),
                     colored("l:{}".format(self.last_trace[1]), color="yellow")
                 )
+
+                # print the line also with variables replaced by their values
+                if self.parse_values:
+                    line_ast = ast.parse(calling_line.strip())
+                    value_getter = ASTValueGetter(self.last_namespace)
+                    modified_ast = value_getter.visit(line_ast)
+                    modified_line = astunparse.unparse(modified_ast)
+
+                    msg += "\n" + " " * (2 * len(self.stack) + 1)
+                    msg += " {} {}".format(
+                        colored("with values", color="yellow"),
+                        highlight_code(modified_line).strip(),
+                    )
+
         elif event == "return":
             self.stack.pop(-1)
             msg += colored("  " * len(self.stack) + " <-", color="yellow")
@@ -99,12 +134,17 @@ class Tracer(object):
                     colored("execute", color="yellow"),
                     highlight_code(code_context[0]).rstrip()
                 )
+
         # only print message if stack does not exceed maximum depth
         if msg:
             if self.max_depth < 0 or len(self.stack) < self.max_depth:
                 print(msg)
+
         # remember last step for call events, to determine where the call happens
+        # this (intendedly) skips intermediate untraced calls
         self.last_trace = (filename, lineno)
+        if self.parse_values:
+            self.last_namespace = dict(frame.f_globals, **frame.f_locals)
 
         return self.tracefunc
 

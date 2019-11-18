@@ -9,5 +9,5 @@ setup(
     author="Yannik Rath",
     description="Trace python program execution at runtime.",
     scripts=["bin/pytrace"],
-    install_requires=["pygments"],
+    install_requires=["pygments", "astunparse"],
 )
