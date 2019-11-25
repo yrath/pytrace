@@ -20,6 +20,9 @@ def trace_execution(*args, **kwargs):
 
 
 class ASTValueGetter(ast.NodeTransformer):
+    """
+    Replace simple variables by their values in an AST.
+    """
     def __init__(self, namespace):
         self.namespace = namespace
 
@@ -33,15 +36,17 @@ class ASTValueGetter(ast.NodeTransformer):
 
 class Tracer(object):
 
-    def __init__(self, trace_lines=False, traced_paths=None, parse_values=False,
-            max_depth=-1):
+    def __init__(self, trace_lines=False, traced_paths=None, untraced_functions=None,
+            parse_values=False, max_depth=-1):
         """
         Initialize Tracer.
 
         Arguments:
           trace_line: Whether each line execution should be traced. Defaults to False.
-          traced_paths: Only trace program execution in files contained in traced_paths.
+          traced_paths: Only trace program execution in files contained in *traced_paths*.
               Allows globbing and defaults to all paths.
+          untraced_functions: Do not trace program execution in functions/methods
+              contained in *untraced_functions*. Defaults to None.
           parse_values: Repeat function call trace with simple variables replaced by
               their values. Defaults to False.
           max_depth: Maximum depth of stack that is still printed. Negative values
@@ -52,6 +57,10 @@ class Tracer(object):
             self.traced_paths = ["*"]
         else:
             self.traced_paths = traced_paths
+        if untraced_functions is None:
+            self.untraced_functions = []
+        else:
+            self.untraced_functions = untraced_functions
 
         self.trace_lines = trace_lines
         self.parse_values = parse_values
@@ -59,7 +68,7 @@ class Tracer(object):
         self.orig_tracefunc = sys.gettrace()
         sys.settrace(self.tracefunc)
 
-        self.skip_paths = set()
+        self.skip_frames = set()
 
         self.max_depth = max_depth
         self.last_trace = None
@@ -68,7 +77,7 @@ class Tracer(object):
         if frame is None:
             return self.tracefunc
         # skip previously skipped frame without invoking inspect for performance
-        if frame.f_code in self.skip_paths:
+        if frame.f_code in self.skip_frames:
             return None
 
         filename, lineno, function, code_context, index = inspect.getframeinfo(frame)
@@ -78,7 +87,13 @@ class Tracer(object):
         # only required if new function is called
         if event == "call" and not any(fnmatch.fnmatch(filename, path)
                 for path in self.traced_paths):
-            self.skip_paths.add(frame.f_code)
+            self.skip_frames.add(frame.f_code)
+            return None
+
+        # check if function should be skipped
+        # only required if new function is called
+        if event == "call" and function in self.untraced_functions:
+            self.skip_frames.add(frame.f_code)
             return None
 
         # if we are in a method, figure out class
