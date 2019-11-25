@@ -12,6 +12,10 @@ parser.add_argument("-l", "--trace-lines", help="output each executed line withi
     action="store_true")
 parser.add_argument("-p", "--traced-paths", help="Trace only files matching the provided paths. "
     "Supports globbing. Defaults to all paths in current working directory.", default=None)
+parser.add_argument("-f", "--untraced-functions", help="Do not trace functions or methods "
+    "matching the provided names. Defaults to None.", default=None)
+parser.add_argument("-v", "--parse-values", help="Repeat function call traces with "
+    "simple variables replaced by their values.", default=False, action="store_true")
 parser.add_argument("command", help="traced command to execute",
     nargs=argparse.REMAINDER)
 args = parser.parse_args()
@@ -21,6 +25,7 @@ if args.traced_paths is None:
 else:
     traced_paths = args.traced_paths
 
-with trace_execution(trace_lines=args.trace_lines, traced_paths=traced_paths) as tracer:
+with trace_execution(trace_lines=args.trace_lines, traced_paths=traced_paths,
+        untraced_functions=args.untraced_functions, parse_values=args.parse_values) as tracer:
     sys.argv = args.command
     runpy.run_path(sys.argv[0])
