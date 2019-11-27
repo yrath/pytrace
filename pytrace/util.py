@@ -29,3 +29,11 @@ def highlight_code(text):
         return highlight(text, lexer, formatter)
     else:
         return text
+
+
+def only_simple_types(obj):
+    if isinstance(obj, (int, float, str, bool)):
+        return True
+    elif isinstance(obj, (list, tuple)):
+        return all([only_simple_types(elem) for elem in obj])
+    return False

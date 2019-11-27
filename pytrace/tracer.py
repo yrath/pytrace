@@ -9,7 +9,7 @@ import ast
 import astunparse
 
 from contextlib import contextmanager
-from pytrace.util import colored, highlight_code
+from pytrace.util import colored, highlight_code, only_simple_types
 
 
 @contextmanager
@@ -26,10 +26,26 @@ class ASTValueGetter(ast.NodeTransformer):
     def __init__(self, namespace):
         self.namespace = namespace
 
+    def _to_ast_object(self, node, node_value):
+        if sys.version_info.major >= 3:
+            return ast.Constant(node_value)
+
+        else:  # python 2
+            if isinstance(node_value, bool):
+                return ast.Name(bool, node.ctx)
+            elif isinstance(node_value, (int, float, str)):
+                return ast.Num(node_value)
+            elif isinstance(node_value, list):
+                return ast.List([self._to_ast_object(node, value) for value in node_value],
+                    node.ctx)
+            elif isinstance(node_value, tuple):
+                return ast.Tuple([self._to_ast_object(node, value) for value in node_value],
+                    node.ctx)
+
     def visit_Name(self, node):
         node_value = self.namespace.get(node.id, node)
-        if isinstance(node_value, (bool, int, float, str, list, tuple)):
-            return ast.Constant(node_value)
+        if only_simple_types(node_value):
+            return self._to_ast_object(node, node_value)
         else:
             return node
 
