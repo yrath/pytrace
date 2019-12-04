@@ -3,7 +3,6 @@
 import sys
 import inspect
 import fnmatch
-import linecache
 import os
 import ast
 import astunparse
@@ -90,6 +89,23 @@ class Tracer(object):
         self.last_trace = {}  # last executed line for each depth
         self.last_namespace = {}  # corresponding namespace
 
+    def _get_multiline(self, f_code, lineno):
+        code_block, starting_line = inspect.getsourcelines(f_code)
+
+        indent = len(code_block[0]) - len(code_block[0].lstrip())
+        for idx, line in enumerate(code_block):
+            code_block[idx] = line[indent:]
+        block_ast = ast.parse("".join(code_block))
+
+        calling_lines = None
+        for statement in block_ast.body[0].body:
+            start_lineno = starting_line + statement.lineno - 1
+            if start_lineno > lineno:
+                break
+            calling_lines = astunparse.unparse(statement)
+
+        return calling_lines
+
     def tracefunc(self, frame, event, arg):
         if frame is None:
             return self.tracefunc
@@ -132,18 +148,19 @@ class Tracer(object):
 
             last_trace = self.last_trace.get(len(self.stack) - 1, None)
             if last_trace is not None:
-                calling_line = linecache.getline(*last_trace)
+                last_file, last_line, last_code = last_trace
+                calling_lines = self._get_multiline(last_code, last_line)
 
                 msg += "\n" + " " * (2 * len(self.stack) + 1)
                 msg += " {} {}, {}".format(
                     colored("as", color="yellow"),
-                    highlight_code(calling_line).strip(),
-                    colored("l:{}".format(last_trace[1]), color="yellow")
+                    highlight_code(calling_lines).strip(),
+                    colored("l:{}".format(last_line), color="yellow")
                 )
 
                 # print the line also with variables replaced by their values
                 if self.parse_values:
-                    line_ast = ast.parse(calling_line.strip())
+                    line_ast = ast.parse(calling_lines.strip())
                     value_getter = ASTValueGetter(self.last_namespace[len(self.stack) - 1])
                     modified_ast = value_getter.visit(line_ast)
                     modified_line = astunparse.unparse(modified_ast)
@@ -177,7 +194,7 @@ class Tracer(object):
         # remember last step for call events, to determine where the call happens
         # this (intendedly) skips intermediate untraced calls
         depth = len(self.stack) - 1 if event == "return" else len(self.stack)
-        self.last_trace[depth] = (filename, lineno)
+        self.last_trace[depth] = (filename, lineno, frame.f_code)
         if self.parse_values:
             self.last_namespace[depth] = dict(frame.f_globals, **frame.f_locals)
 
