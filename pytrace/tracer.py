@@ -174,16 +174,21 @@ class Tracer(object):
 
                 # print the line also with variables replaced by their values
                 if self.parse_values:
-                    line_ast = ast.parse(calling_lines.strip())
-                    value_getter = ASTValueGetter(self.last_namespace[len(self.stack) - 1])
-                    modified_ast = value_getter.visit(line_ast)
-                    modified_line = astunparse.unparse(modified_ast)
+                    try:
+                        line_ast = ast.parse(calling_lines.strip())
+                        value_getter = ASTValueGetter(self.last_namespace[len(self.stack) - 1])
+                        modified_ast = value_getter.visit(line_ast)
+                        modified_line = astunparse.unparse(modified_ast)
 
-                    msg += "\n" + " " * (2 * len(self.stack) + 1)
-                    msg += " {} {}".format(
-                        colored("with values", color="yellow"),
-                        highlight_code(modified_line).strip(),
-                    )
+                        msg += "\n" + " " * (2 * len(self.stack) + 1)
+                        msg += " {} {}".format(
+                            colored("with values", color="yellow"),
+                            highlight_code(modified_line).strip(),
+                        )
+                    except SyntaxError:  # if the calling line as a standalone is not valid python code, skip
+                        pass
+                    except:
+                        raise
 
         elif event == "return":
             self.stack.pop(-1)
