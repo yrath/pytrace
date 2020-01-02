@@ -4,6 +4,7 @@ import sys
 import inspect
 import fnmatch
 import os
+import linecache
 import ast
 import astunparse
 
@@ -89,7 +90,7 @@ class Tracer(object):
         self.last_trace = {}  # last executed line for each depth
         self.last_namespace = {}  # corresponding namespace
 
-    def _get_multiline(self, f_code, lineno):
+    def _get_multiline(self, f_code, lineno, filename):
         code_block, starting_line = inspect.getsourcelines(f_code)
 
         indent = len(code_block[0]) - len(code_block[0].lstrip())
@@ -97,12 +98,25 @@ class Tracer(object):
             code_block[idx] = line[indent:]
         block_ast = ast.parse("".join(code_block))
 
-        calling_lines = None
-        for statement in block_ast.body[0].body:
-            start_lineno = starting_line + statement.lineno - 1
-            if start_lineno > lineno:
-                break
-            calling_lines = astunparse.unparse(statement)
+        def traverse(node):
+            if hasattr(node, "body"):
+                calling_lines = None
+                for sub_node in node.body:
+                    returnvalue = traverse(sub_node)
+                    if returnvalue is None:
+                        break
+                    calling_lines = returnvalue
+                return calling_lines
+            else:
+                start_lineno = starting_line + node.lineno - 1
+                if start_lineno > lineno:
+                    return None
+                else:
+                    return astunparse.unparse(node)
+
+        calling_lines = traverse(block_ast)
+        if calling_lines is None:
+            calling_lines = linecache.getline(filename, lineno)
 
         return calling_lines
 
@@ -149,7 +163,7 @@ class Tracer(object):
             last_trace = self.last_trace.get(len(self.stack) - 1, None)
             if last_trace is not None:
                 last_file, last_line, last_code = last_trace
-                calling_lines = self._get_multiline(last_code, last_line)
+                calling_lines = self._get_multiline(last_code, last_line, last_file)
 
                 msg += "\n" + " " * (2 * len(self.stack) + 1)
                 msg += " {} {}, {}".format(
