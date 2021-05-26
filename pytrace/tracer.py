@@ -50,7 +50,7 @@ class ASTValueGetter(ast.NodeTransformer):
 
     def visit_Name(self, node):
         node_value = self.namespace.get(node.id, node)
-        if only_simple_types(node_value):
+        if only_simple_types(node_value) and isinstance(node.ctx, ast.Load):
             return self._to_ast_object(node, node_value)
         else:
             return node
