@@ -28,7 +28,13 @@ class ASTValueGetter(ast.NodeTransformer):
 
     def _to_ast_object(self, node, node_value):
         if sys.version_info.major >= 3:
-            return ast.Constant(node_value)
+            if sys.version_info.minor >= 8:
+                # check for unicode strings
+                kind = "u" if isinstance(node_value, str) else None
+
+                return ast.Constant(node_value, kind=kind)
+            else:
+                return ast.Constant(node_value)
 
         else:  # python 2
             if isinstance(node_value, bool):
