@@ -9,6 +9,8 @@ import ast
 import astunparse
 
 from contextlib import contextmanager
+from typing import Any, List, Optional
+
 from pytrace.util import colored, highlight_code, only_simple_types
 
 
@@ -58,8 +60,14 @@ class ASTValueGetter(ast.NodeTransformer):
 
 class Tracer(object):
 
-    def __init__(self, trace_lines=False, traced_paths=None, untraced_functions=None,
-            parse_values=False, max_depth=-1):
+    def __init__(
+        self,
+        trace_lines: Any = False,
+        traced_paths: Optional[List[str]] = None,
+        untraced_functions: Optional[List] = None,
+        parse_values: Any = False,
+        max_depth: int = -1
+    ):
         """
         Initialize Tracer.
 
@@ -99,26 +107,27 @@ class Tracer(object):
     def _get_multiline(self, f_code, lineno, filename):
         code_block, starting_line = inspect.getsourcelines(f_code)
 
-        indent = len(code_block[0]) - len(code_block[0].lstrip())
-        for idx, line in enumerate(code_block):
-            code_block[idx] = line[indent:]
+        if code_block[0].lstrip():
+            indent = len(code_block[0]) - len(code_block[0].lstrip())
+            for idx, line in enumerate(code_block):
+                code_block[idx] = line[indent:]
+
         block_ast = ast.parse("".join(code_block))
 
-        def traverse(node):
-            if hasattr(node, "body"):
-                calling_lines = None
-                for sub_node in node.body:
-                    returnvalue = traverse(sub_node)
-                    if returnvalue is None:
+        def traverse(base_node):
+            calling_lines = None
+            nodes_to_traverse = [base_node]
+            while nodes_to_traverse:
+                node = nodes_to_traverse.pop(0)
+                if hasattr(node, "body"):
+                    nodes_to_traverse = node.body + nodes_to_traverse
+                if hasattr(node, "lineno"):
+                    starting_lineno = starting_line + node.lineno - 1
+                    if starting_lineno > lineno:
                         break
-                    calling_lines = returnvalue
-                return calling_lines
-            else:
-                start_lineno = starting_line + node.lineno - 1
-                if start_lineno > lineno:
-                    return None
-                else:
-                    return astunparse.unparse(node)
+                calling_lines = astunparse.unparse(node)
+
+            return calling_lines
 
         calling_lines = traverse(block_ast)
         if calling_lines is None:
@@ -134,7 +143,8 @@ class Tracer(object):
             return None
 
         filename, lineno, function, code_context, index = inspect.getframeinfo(frame)
-        filename = os.path.abspath(filename)
+        if not (filename.startswith("<") and filename.endswith(">")):
+          filename = os.path.abspath(filename)
 
         # check if file in paths to be checked
         # only required if new function is called
@@ -169,32 +179,33 @@ class Tracer(object):
             last_trace = self.last_trace.get(len(self.stack) - 1, None)
             if last_trace is not None:
                 last_file, last_line, last_code = last_trace
-                calling_lines = self._get_multiline(last_code, last_line, last_file)
+                if os.path.exists(last_file):
+                    calling_lines = self._get_multiline(last_code, last_line, last_file)
 
-                msg += "\n" + " " * (2 * len(self.stack) + 1)
-                msg += " {} {}, {}".format(
-                    colored("as", color="yellow"),
-                    highlight_code(calling_lines).strip(),
-                    colored("l:{}".format(last_line), color="yellow")
-                )
+                    msg += "\n" + " " * (2 * len(self.stack) + 1)
+                    msg += " {} {}, {}".format(
+                        colored("as", color="yellow"),
+                        highlight_code(calling_lines).strip(),
+                        colored("l:{}".format(last_line), color="yellow")
+                    )
 
-                # print the line also with variables replaced by their values
-                if self.parse_values:
-                    try:
-                        line_ast = ast.parse(calling_lines.strip())
-                        value_getter = ASTValueGetter(self.last_namespace[len(self.stack) - 1])
-                        modified_ast = value_getter.visit(line_ast)
-                        modified_line = astunparse.unparse(modified_ast)
+                    # print the line also with variables replaced by their values
+                    if self.parse_values:
+                        try:
+                            line_ast = ast.parse(calling_lines.strip())
+                            value_getter = ASTValueGetter(self.last_namespace[len(self.stack) - 1])
+                            modified_ast = value_getter.visit(line_ast)
+                            modified_line = astunparse.unparse(modified_ast)
 
-                        msg += "\n" + " " * (2 * len(self.stack) + 1)
-                        msg += " {} {}".format(
-                            colored("with values", color="yellow"),
-                            highlight_code(modified_line).strip(),
-                        )
-                    except SyntaxError:  # if the calling line as a standalone is not valid python code, skip
-                        pass
-                    except:
-                        raise
+                            msg += "\n" + " " * (2 * len(self.stack) + 1)
+                            msg += " {} {}".format(
+                                colored("with values", color="yellow"),
+                                highlight_code(modified_line).strip(),
+                            )
+                        except SyntaxError:  # if the calling line as a standalone is not valid python code, skip
+                            pass
+                        except:
+                            raise
 
         elif event == "return":
             self.stack.pop(-1)
